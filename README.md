@@ -56,7 +56,7 @@ lifi-create3-crunch [OPTIONS] --creator <CREATOR_ADDRESS>
 - `-c, --creator <ADDRESS>`: The creator address (required)
 - `-s, --starts-with <PREFIX>`: Desired address prefix (without 0x)
 - `-e, --ends-with <SUFFIX>`: Desired address suffix
-- `-m, --max-attempts <NUMBER>`: Maximum number of attempts (default: u64::MAX)
+- `-z, --leading-zeros <NUMBER>`: Number of leading zeros in the address
 - `--silent`: Run in silent mode (no progress output)
 - `-p, --parallel`: Enable parallel processing for faster generation
 

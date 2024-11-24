@@ -17,8 +17,8 @@ pub struct FindSaltOptions {
     creator: String,
     starts_with: Option<String>,
     ends_with: Option<String>,
+    leading_zeros: Option<u8>,
     silent: bool,
-    max_attempts: u64,
     parallel: bool,
 }
 
@@ -47,7 +47,15 @@ fn get_deployed(salt: &[u8]) -> String {
     format!("0x{}", hex::encode(&encoded2[12..]))
 }
 
-fn is_valid_address(address: &str, starts_with: &Option<String>, ends_with: &Option<String>) -> bool {
+fn is_valid_address(address: &str, starts_with: &Option<String>, ends_with: &Option<String>, leading_zeros: &Option<u8>) -> bool {
+    if let Some(zeros) = leading_zeros {
+        // Each zero represents 2 hex characters
+        let required_zeros = "0".repeat(*zeros as usize * 2);
+        if !address[2..].starts_with(&required_zeros) {
+            return false;
+        }
+    }
+
     if starts_with.is_none() && ends_with.is_none() {
         return true;
     }
@@ -73,10 +81,10 @@ pub fn find_salt(options: FindSaltOptions) -> Option<SaltResult> {
 }
 
 pub fn find_salt_sequential(options: FindSaltOptions) -> Option<SaltResult> {
-    let mut attempts = 0;
+    let mut attempts = 0u64;
     let mut rng = rand::thread_rng();
 
-    while attempts < options.max_attempts {
+    loop {
         attempts += 1;
         let salt: [u8; 32] = rng.gen();
         
@@ -92,7 +100,7 @@ pub fn find_salt_sequential(options: FindSaltOptions) -> Option<SaltResult> {
             io::stdout().flush().unwrap();
         }
 
-        if is_valid_address(&address, &options.starts_with, &options.ends_with) {
+        if is_valid_address(&address, &options.starts_with, &options.ends_with, &options.leading_zeros) {
             if !options.silent {
                 println!("\nFound matching address!");
                 println!("Salt: 0x{}", hex::encode(salt));
@@ -105,37 +113,28 @@ pub fn find_salt_sequential(options: FindSaltOptions) -> Option<SaltResult> {
             });
         }
     }
-
-    if !options.silent {
-        println!("\nNo matching address found after {} attempts", attempts);
-    }
-    None
 }
 
 pub fn find_salt_parallel(options: FindSaltOptions) -> Option<SaltResult> {
     let chunk_size = 10000;
     let num_threads = num_cpus::get();
-    let attempts_per_thread = options.max_attempts / num_threads as u64;
     let progress = Mutex::new(0u64);
     
     let creator_bytes = hex::decode(&options.creator[2..]).unwrap();
 
     (0..num_threads).into_par_iter()
         .find_map_any(|_| {
-            let mut attempts = 0;
             let mut rng = rand::thread_rng();
             let mut packed = Vec::with_capacity(20 + 32);
             packed.extend_from_slice(&creator_bytes);
             packed.resize(packed.len() + 32, 0);
 
-            while attempts < attempts_per_thread {
+            loop {
                 for _ in 0..chunk_size {
                     rng.fill(&mut packed[creator_bytes.len()..]);
                     
                     let hex_salt = keccak256(&packed);
                     let address = get_deployed(&hex_salt);
-
-                    attempts += 1;
 
                     if !options.silent {
                         let mut total = progress.lock().unwrap();
@@ -146,12 +145,12 @@ pub fn find_salt_parallel(options: FindSaltOptions) -> Option<SaltResult> {
                         }
                     }
 
-                    if is_valid_address(&address, &options.starts_with, &options.ends_with) {
+                    if is_valid_address(&address, &options.starts_with, &options.ends_with, &options.leading_zeros) {
                         if !options.silent {
                             println!("\nFound matching address!");
                             println!("Salt: 0x{}", hex::encode(&packed[creator_bytes.len()..]));
                             println!("Address: {}", address);
-                            println!("Attempts: {}", attempts);
+                            println!("Attempts: {}", *progress.lock().unwrap());
                         }
                         return Some(SaltResult {
                             salt: format!("0x{}", hex::encode(&packed[creator_bytes.len()..])),
@@ -160,7 +159,6 @@ pub fn find_salt_parallel(options: FindSaltOptions) -> Option<SaltResult> {
                     }
                 }
             }
-            None
         })
 }
 
@@ -176,8 +174,8 @@ struct Args {
     #[arg(short, long)]
     ends_with: Option<String>,
     
-    #[arg(short, long, default_value_t = u64::MAX)]
-    max_attempts: u64,
+    #[arg(short = 'z', long, help = "Number of leading zeros in the address")]
+    leading_zeros: Option<u8>,
     
     #[arg(long, default_value_t = false)]
     silent: bool,
@@ -195,7 +193,7 @@ fn main() {
         creator: args.creator,
         starts_with,
         ends_with: args.ends_with,
-        max_attempts: args.max_attempts,
+        leading_zeros: args.leading_zeros,
         silent: args.silent,
         parallel: args.parallel,
     }) {
