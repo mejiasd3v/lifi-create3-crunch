@@ -1,0 +1,13 @@
+[package]
+name = "create3-vanity-generator"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.0", features = ["derive"] }
+ethers = "2.0"
+rand = "0.8"
+lazy_static = "1.4"
+hex = "0.4"
+rayon = "1.8"
+num_cpus = "1.16.0"
